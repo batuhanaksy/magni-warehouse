@@ -2,7 +2,7 @@ fx_version 'adamant'
 games { 'gta5' }
 
 author 'Magni#0247'
-
+shared_script '@ox_lib/init.lua'
 client_scripts {
 	'config.lua',
 	'client/main.lua'
@@ -23,3 +23,5 @@ files {
     'html/script.js',
     'html/style.css'
 }
+
+lua54 'on'

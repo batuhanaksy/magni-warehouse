@@ -1,11 +1,5 @@
-ESX = nil
+ESX = exports['es_extended']:getSharedObject()
 
-Citizen.CreateThread(function()
-	while ESX == nil do
-		TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
-		Citizen.Wait(0)
-	end
-end)
 local PlayerLoaded = false
 local PlayerData = {}
 
@@ -104,6 +98,10 @@ RegisterNUICallback("open", function(data)
     elseif Config.StashType == 'custom' then
         TriggerServerEvent("inventory:server:OpenInventory", "stash", ""..data.name)
         TriggerEvent("inventory:client:SetCurrentStash",""..data.name)
+    elseif Config.StashType == 'oxinventory' then
+        local name = data.name
+        TriggerEvent('ox_inventory:openInventory', 'stash', {id = data.name, name = data.name, slots = 500, weight = 100000})
+
     end
     SetNuiFocus(false, false)
 end)

@@ -1,28 +1,53 @@
-ESX = nil
-TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+ESX = exports['es_extended']:getSharedObject()
+
+if Config.StashType == "oxinventory" then
+    Citizen.CreateThread(function()
+        Citizen.Wait(0)
+        for k, v in pairs(Config.Locations) do
+            exports.ox_inventory:RegisterStash(v.name, v.name, 50, 1000000, false)
+        end
+    end)
+end    
+
+function ExecuteSql(query)
+	local IsBusy = true
+	local result = nil
+	if Config.SQL == "oxmysql" then
+	    if MySQL == nil then
+	        exports.oxmysql:execute(query, function(data)
+		  result = data
+		  IsBusy = false
+	        end)
+	    else
+	        MySQL.query(query, {}, function(data)
+		  result = data
+		  IsBusy = false
+	        end)
+	    end
+      
+	elseif Config.SQL == "ghmattimysql" then
+	    exports.ghmattimysql:execute(query, {}, function(data)
+	        result = data
+	        IsBusy = false
+	    end)
+	elseif Config.SQL == "mysql-async" then   
+	    MySQL.Async.fetchAll(query, {}, function(data)
+	        result = data
+	        IsBusy = false
+	    end)
+	end
+	while IsBusy do
+	    Citizen.Wait(0)
+	end
+	return result
+end
 
 local Warehouse = Config.Locations
 Citizen.CreateThread(function()
 	Citizen.Wait(0)
-    if Config.SQL == "oxmysql" then
-        exports.oxmysql:ready(function()
-            local result = exports.oxmysql:executeSync("SELECT * FROM magni_warehouse")
-            for warehouses = 1, #result do
-                Warehouse[result[warehouses].id].owner = result[warehouses].owner
-            end
-        end)
-    elseif Config.SQL == "mysql" then
-        MySQL.ready(function()
-            local result = MySQL.Sync.fetchAll("SELECT * FROM magni_warehouse")
-            for warehouses = 1, #result do
-                Warehouse[result[warehouses].id].owner = result[warehouses].owner
-            end
-        end)
-    elseif Config.SQL == "ghmattimysql" then
-        local result = exports.ghmattimysql:executeSync("SELECT * FROM magni_warehouse")
-		for warehouses = 1, #result do
-            Warehouse[result[warehouses].id].owner = result[warehouses].owner
-		end
+    local result = ExecuteSql("SELECT * FROM magni_warehouse")
+    for warehouses = 1, #result do
+        Warehouse[result[warehouses].id].owner = result[warehouses].owner
     end
 end)
 
@@ -40,22 +65,20 @@ AddEventHandler("magni-warehouse:buy", function(data)
     data.id = tonumber(data.id)
     if currentMoney >= price then
         xPlayer.removeAccountMoney(Config.MoneyType, price)
-        if Config.SQL == "mysql" then
-            MySQL.Async.execute("INSERT INTO magni_warehouse (owner, name, id) VALUES (@owner, @name, @id)", {["@owner"] = identifier, ["@name"] = data.name,["@id"] = data.id})
-        elseif Config.SQL == "oxmysql" then
-            exports.oxmysql:execute("INSERT INTO magni_warehouse (owner, name, id) VALUES (@owner, @name, @id)", {["@owner"] = identifier, ["@name"] = data.name,["@id"] = data.id})
-        elseif Config.SQL == "ghmattimysql" then
-            exports.ghmattimysql:execute("INSERT INTO magni_warehouse (owner, name, id) VALUES (@owner, @name, @id)", {["@owner"] = identifier, ["@name"] = data.name,["@id"] = data.id})
-        end
+        ExecuteSql(string.format("INSERT INTO `magni_warehouse` (`owner`,`name`,`id`) VALUES ('"..identifier.."', '"..data.name.."','"..data.id.."')"))
 
         TriggerClientEvent('magni-warehouse:client:updateData', -1, data.id, "owner", identifier)
         Warehouse[data.id].owner = identifier
-        TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'success', text = ""..data.name.. " "..price.."$ Purchased!"})
+        if Config.Notify then
+            TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'success', text = ""..data.name.. " "..price.."$ Purchased!"})
+        end
         if Config.Discordlog then
             Discordlog(data)
         end
     else
-        TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'error', text = "You don\'t have this amount."})
+        if Config.Notify then
+            TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'error', text = "You don\'t have this amount."})
+        end
     end
 end)
 
@@ -66,68 +89,45 @@ AddEventHandler("magni-warehouse:sell", function(data)
     if xPlayer then
         local price = tonumber(data.price)
         data.id = tonumber(data.id)
-        if Config.SQL == "mysql" then
-            MySQL.Async.fetchAll("SELECT * FROM magni_warehouse WHERE id = @id", {
-                ["@id"] = data.id
-            }, function(result)
-                if result[1] then
-                    MySQL.Async.execute("DELETE FROM magni_warehouse WHERE id = @id", {
-                        ['@id'] = data.id,
-                    }, function()
-                        local money = price * 0.5
-                        xPlayer.addAccountMoney(Config.MoneyType,money)
-                        TriggerClientEvent('mythic_notify:client:SendAlert', src, { type = 'success', text = ""..data.name.. " "..money.."$ sold!"})
-                        Warehouse[data.id].owner = nil
-                        TriggerClientEvent('magni-warehouse:client:updateData', -1, data.id, "owner", nil)
-                        Warehouse[data.id].owner = nil
-                    end)
-                end
-            end)
-        elseif Config.SQL == "oxmysql" then
-            exports.oxmysql:execute("SELECT * FROM magni_warehouse WHERE id = @id", {
-                ["@id"] = data.id
-            }, function(result)
-                if result[1] then
-                    exports.oxmysql:execute("DELETE FROM magni_warehouse WHERE id = @id", {
-                        ['@id'] = data.id,
-                    }, function()
-                        local money = price * 0.5
-                        xPlayer.addAccountMoney(Config.MoneyType,money)
-                        TriggerClientEvent('mythic_notify:client:SendAlert', src, { type = 'success', text = ""..data.name.. " "..money.."$ sold!"})
-                        Warehouse[data.id].owner = nil
-                        TriggerClientEvent('magni-warehouse:client:updateData', -1, data.id, "owner", nil)
-                        Warehouse[data.id].owner = nil
-                    end)
-                end
-            end)
-        elseif Config.SQL == "ghmattimysql" then
-            exports.ghmattimysql:execute("SELECT * FROM magni_warehouse WHERE id = @id", {
-                ["@id"] = data.id
-            }, function(result)
-                if result[1] then
-                    MySQL.Async.execute("DELETE FROM magni_warehouse WHERE id = @id", {
-                        ['@id'] = data.id,
-                    }, function()
-                        local money = price * 0.5
-                        xPlayer.addAccountMoney(Config.MoneyType,money)
-                        TriggerClientEvent('mythic_notify:client:SendAlert', src, { type = 'success', text = ""..data.name.. " "..money.."$ sold!"})
-                        Warehouse[data.id].owner = nil
-                        TriggerClientEvent('magni-warehouse:client:updateData', -1, data.id, "owner", nil)
-                        Warehouse[data.id].owner = nil
-                    end)
-                end
-            end)
-        end
+        ExecuteSql("SELECT * FROM magni_warehouse WHERE id = @id", {
+            ["@id"] = data.id
+        }, function(result)
+            if result[1] then
+                MySQL.Async.execute("DELETE FROM magni_warehouse WHERE id = @id", {
+                    ['@id'] = data.id,
+                }, function()
+                    local money = price * 0.5
+                    xPlayer.addAccountMoney(Config.MoneyType,money)
+                    if Config.Notify then
+                        TriggerClientEvent('mythic_notify:client:SendAlert', source, { type = 'success', text = ""..data.name.. " "..money.."$ Sold!"})
+                    end
+                    Warehouse[data.id].owner = nil
+                    TriggerClientEvent('magni-warehouse:client:updateData', -1, data.id, "owner", nil)
+                    Warehouse[data.id].owner = nil
+                end)
+            end
+        end)
     end
 end)
 
+function GetName(source)
+    local xPlayer = ESX.GetPlayerFromId(tonumber(source))
+    if xPlayer then
+        return xPlayer.getName()
+    else
+        return "Magni#0247"
+    end
+end
+
 function Discordlog(data)
+    local src = source
     local ts = os.time()
     local time = os.date('%Y-%m-%d %H:%M:%S', ts)
+    local name = GetName(src)
     local connect = {
         {
             ["title"] = data.name,
-            ["description"] = ""..data.price.." $ Purchased",
+            ["description"] = "Buyer: "..name.." "..data.price.." $ Purchased",
             ["thumbnail"] = {["url"] = data.img1},
             ["footer"] = {
                 ["text"] = ""..time,
